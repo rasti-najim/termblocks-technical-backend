@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field as PydanticField
 from sqlmodel import SQLModel, Field, create_engine, Session, Relationship, select, column
 from dotenv import load_dotenv
 from sqlalchemy.exc import SQLAlchemyError, ProgrammingError
+from sqlalchemy import func, select as sqlalchemy_select
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,8 +45,6 @@ class File(SQLModel, table=True):
 class Item(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    allow_multiple_files: bool = Field(default=False)
-    is_file_upload_field: bool = Field(default=False)
     
     files: List[File] = Relationship(back_populates="items", link_model=ItemFileLink)
     categories: List["Category"] = Relationship(back_populates="items", link_model=CategoryItemLink)
@@ -76,8 +75,6 @@ class FileCreate(BaseModel):
 
 class ItemCreate(BaseModel):
     name: str
-    allow_multiple_files: bool = False
-    is_file_upload_field: bool = False
     files: Optional[List[FileCreate]] = None
 
 class CategoryCreate(BaseModel):
@@ -113,8 +110,66 @@ def read_root():
 
 @app.get("/checklists")
 def read_checklists(db: Session = Depends(get_db)):
-    checklists = db.exec(select(Checklist)).all()
-    return {"checklists": [{"id": checklist.id, "name": checklist.name, "share_token": checklist.share_token} for checklist in checklists]}
+    # Query to efficiently get checklists with category counts
+    checklist_with_category_counts = (
+        db.execute(
+            sqlalchemy_select(
+                Checklist.id,
+                Checklist.name,
+                Checklist.share_token,
+                Checklist.created_at,
+                Checklist.updated_at,
+                func.count(ChecklistCategoryLink.category_id).label("category_count")
+            )
+            .outerjoin(ChecklistCategoryLink, Checklist.id == ChecklistCategoryLink.checklist_id)
+            .group_by(Checklist.id)
+        )
+        .all()
+    )
+    
+    # Create a mapping of checklist IDs to their data including category counts
+    checklist_data = {
+        row[0]: {
+            "id": row[0],
+            "name": row[1],
+            "share_token": row[2],
+            "created_at": row[3],
+            "updated_at": row[4],
+            "category_count": row[5],
+            "item_count": 0  # Will be updated in the next query
+        }
+        for row in checklist_with_category_counts
+    }
+    
+    # Get checklist IDs for the second query
+    checklist_ids = list(checklist_data.keys())
+    
+    if checklist_ids:  # Only run second query if we have checklists
+        # Query to get item counts for each checklist in one go
+        item_counts = (
+            db.execute(
+                sqlalchemy_select(
+                    Checklist.id,
+                    func.count(Item.id).label("item_count")
+                )
+                .join(ChecklistCategoryLink, Checklist.id == ChecklistCategoryLink.checklist_id)
+                .join(Category, Category.id == ChecklistCategoryLink.category_id)
+                .join(CategoryItemLink, Category.id == CategoryItemLink.category_id)
+                .join(Item, Item.id == CategoryItemLink.item_id)
+                .where(Checklist.id.in_(checklist_ids))
+                .group_by(Checklist.id)
+            )
+            .all()
+        )
+        
+        # Update the checklist data with item counts
+        for checklist_id, item_count in item_counts:
+            if checklist_id in checklist_data:
+                checklist_data[checklist_id]["item_count"] = item_count
+    
+    # Convert to a list and return
+    result = list(checklist_data.values())
+    return {"checklists": result}
 
 @app.get("/checklists/{checklist_id}")
 def read_checklist(checklist_id: int, db: Session = Depends(get_db)):
@@ -131,8 +186,6 @@ def read_checklist(checklist_id: int, db: Session = Depends(get_db)):
             items.append({
                 "id": item.id,
                 "name": item.name,
-                "allow_multiple_files": item.allow_multiple_files,
-                "is_file_upload_field": item.is_file_upload_field,
                 "files": files
             })
         categories.append({
@@ -187,9 +240,7 @@ def create_checklist(checklist_data: ChecklistCreate, db: Session = Depends(get_
             if cat_data.items:
                 for item_data in cat_data.items:
                     new_item = Item(
-                        name=item_data.name,
-                        allow_multiple_files=item_data.allow_multiple_files,
-                        is_file_upload_field=item_data.is_file_upload_field
+                        name=item_data.name
                     )
                     db.add(new_item)
                     db.commit()
@@ -243,9 +294,7 @@ def clone_checklist(checklist_id: int, db: Session = Depends(get_db)):
         # Clone all items in this category
         for item in category.items:
             new_item = Item(
-                name=item.name,
-                allow_multiple_files=item.allow_multiple_files,
-                is_file_upload_field=item.is_file_upload_field
+                name=item.name
             )
             db.add(new_item)
             db.commit()
@@ -295,9 +344,7 @@ def add_category(checklist_id: int, category_data: CategoryCreate, db: Session =
     if category_data.items:
         for item_data in category_data.items:
             new_item = Item(
-                name=item_data.name,
-                allow_multiple_files=item_data.allow_multiple_files,
-                is_file_upload_field=item_data.is_file_upload_field
+                name=item_data.name
             )
             db.add(new_item)
             db.commit()
@@ -355,9 +402,7 @@ def add_item(category_id: int, item_data: ItemCreate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Category not found")
     
     new_item = Item(
-        name=item_data.name,
-        allow_multiple_files=item_data.allow_multiple_files,
-        is_file_upload_field=item_data.is_file_upload_field
+        name=item_data.name
     )
     db.add(new_item)
     db.commit()
@@ -384,12 +429,6 @@ def update_item(item_id: int, item_data: Dict[str, Any], db: Session = Depends(g
     # Update fields if provided
     if "name" in item_data:
         item.name = item_data["name"]
-    
-    if "allow_multiple_files" in item_data:
-        item.allow_multiple_files = item_data["allow_multiple_files"]
-    
-    if "is_file_upload_field" in item_data:
-        item.is_file_upload_field = item_data["is_file_upload_field"]
     
     # Update linked checklist timestamps
     for category in item.categories:
@@ -433,14 +472,6 @@ async def upload_file(
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
-    # Check if the item allows files
-    if not item.is_file_upload_field:
-        raise HTTPException(status_code=400, detail="This item does not accept file uploads")
-    
-    # Check if multiple files are allowed when files already exist
-    if not item.allow_multiple_files and len(item.files) > 0:
-        raise HTTPException(status_code=400, detail="This item only accepts a single file")
     
     # Generate a unique filename to prevent collisions
     file_ext = os.path.splitext(file.filename)[1]
