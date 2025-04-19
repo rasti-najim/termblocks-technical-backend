@@ -1,152 +1,143 @@
-# Checklists API
+# TermBlocks Checklists API
 
-A FastAPI application for managing checklists with categories, items, and files.
+A FastAPI application for managing checklists with categories, items, and file uploads.
 
-## Features
+## 📋 Overview
 
-- Create, read, update, and delete checklists with categories and items
-- Add file upload fields to items, configurable to accept one or multiple files
-- Clone existing checklists
-- Share checklists via public links
-- File uploads with proper handling of file types and storage
+This API provides a complete backend solution for creating and managing checklists with:
 
-## Setup
+- Hierarchical organization (checklists → categories → items)
+- File upload capabilities for individual items
+- Checklist sharing via public links
+- Checklist cloning functionality
 
-1. Create a virtual environment:
+## 🛠️ Setup
 
+### Prerequisites
+
+- Python 3.8+
+- PostgreSQL
+
+### Installation
+
+1. Clone the repository:
+
+   ```bash
+   git clone [repository URL]
+   cd termblocks-technical-backend
    ```
+
+2. Create and activate a virtual environment:
+
+   ```bash
    python -m venv venv
+
+   # On macOS/Linux
+   source venv/bin/activate
+
+   # On Windows
+   venv\Scripts\activate
    ```
-
-2. Activate the virtual environment:
-
-   - On macOS/Linux:
-     ```
-     source venv/bin/activate
-     ```
-   - On Windows:
-     ```
-     venv\Scripts\activate
-     ```
 
 3. Install dependencies:
 
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
-4. Setup PostgreSQL:
+4. Configure the database:
 
-   a. Ensure PostgreSQL is installed and running
-
-   b. Create a database for the application:
-
-   ```sql
-   CREATE DATABASE termblocks;
-   ```
-
-   c. Create a `.env` file with your PostgreSQL database URL:
-
-   ```
-   DB_URL=postgresql://username:password@localhost:5432/termblocks
-   ```
-
-   Replace `username` and `password` with your actual PostgreSQL credentials.
+   - Create a PostgreSQL database:
+     ```sql
+     CREATE DATABASE termblocks;
+     ```
+   - Create a `.env` file with your database connection string:
+     ```
+     DB_URL=postgresql://username:password@localhost:5432/termblocks
+     ```
 
 5. Initialize the database:
-
-   ```
+   ```bash
    python main.py
    ```
 
-## Running the Application
+## 🚀 Running the Application
 
-You can run the application in two ways:
+Start the server with one of these commands:
 
-1. Using the run script:
+```bash
+# Option 1: Using the run script
+python run.py
 
-   ```
-   python run.py
-   ```
+# Option 2: Using uvicorn directly
+uvicorn main:app --reload
+```
 
-2. Or directly with uvicorn:
+Access the API at: http://localhost:8000
+Interactive documentation: http://localhost:8000/docs
 
-   ```
-   uvicorn main:app --reload
-   ```
-
-3. Access the API documentation and testing interface at http://localhost:8000/docs
-
-## Testing the API
-
-FastAPI provides an interactive API documentation that allows you to:
-
-1. See all available endpoints
-2. Try out endpoints directly in your browser
-3. View request and response formats
-4. Upload files and test all functionality
-
-To test the application:
-
-1. Open your browser and go to http://localhost:8000/docs
-2. Use the "Try it out" button on any endpoint
-3. Fill in the required parameters and execute the request
-4. View the results directly in the browser
-
-## API Endpoints
+## 🔍 API Endpoints
 
 ### Checklists
 
-- `GET /checklists`: List all checklists
-- `GET /checklists/{checklist_id}`: Get a specific checklist with all related data
-- `POST /checklists`: Create a new checklist
-- `PUT /checklists/{checklist_id}`: Update a checklist
-- `POST /checklists/{checklist_id}/clone`: Clone an existing checklist
+- `GET /checklists` - List all checklists
+- `GET /checklists/{checklist_id}` - Get a specific checklist
+- `POST /checklists` - Create a new checklist
+- `PUT /checklists/{checklist_id}` - Update a checklist
+- `POST /checklists/{checklist_id}/clone` - Clone an existing checklist
 
 ### Categories
 
-- `POST /checklists/{checklist_id}/categories`: Add a category to a checklist
-- `PUT /categories/{category_id}`: Update a category
-- `DELETE /categories/{category_id}`: Delete a category and its items
+- `POST /checklists/{checklist_id}/categories` - Add a category
+- `PUT /categories/{category_id}` - Update a category
+- `DELETE /categories/{category_id}` - Delete a category
 
 ### Items
 
-- `POST /categories/{category_id}/items`: Add an item to a category
-- `PUT /items/{item_id}`: Update an item
-- `DELETE /items/{item_id}`: Delete an item and its files
+- `POST /categories/{category_id}/items` - Add an item
+- `PUT /items/{item_id}` - Update an item
+- `DELETE /items/{item_id}` - Delete an item
 
 ### Files
 
-- `POST /upload/{item_id}`: Upload a file to an item
-- `DELETE /files/{file_id}`: Delete a file
+- `POST /upload/{item_id}` - Upload a file to an item
+- `DELETE /files/{file_id}` - Delete a file
 
 ### Sharing
 
-- `GET /shared/{share_token}`: View a shared checklist by its token
+- `GET /shared/{share_token}` - Access a shared checklist
 
-## Database Structure
+## 🗄️ Database Structure
 
-The database has the following models:
+The application uses these core models:
 
-- `Checklist`: Contains categories, with sharing options
-- `Category`: Contains items
-- `Item`: Contains files, can be configured as a file upload field that allows single or multiple files
-- `File`: Represents a file with metadata and URL
+- **Checklist**: Top-level container with sharing capabilities
+- **Category**: Groups related items within a checklist
+- **Item**: Individual checklist entry, can accept file uploads
+- **File**: Uploaded file with metadata and storage information
 
-## Frontend Integration
+## 🔗 Frontend Integration
 
-The API includes CORS configuration to allow cross-origin requests from the React frontend.
+The API includes CORS configuration to allow integration with frontend applications.
 
-## Troubleshooting
+## ⚠️ Troubleshooting
 
-If you encounter database connection issues:
+### Database Issues
 
-1. Make sure PostgreSQL is running
-2. Verify your database credentials in the `.env` file
-3. Check that the database exists:
-   ```sql
-   SELECT datname FROM pg_database WHERE datname = 'termblocks';
-   ```
-4. Ensure your PostgreSQL user has appropriate permissions
+- Verify PostgreSQL is running
+- Check credentials in the `.env` file
+- Ensure the database exists
+- Confirm proper user permissions
 
-If you have issues with file uploads, make sure the `uploads` directory is writable by the application.
+### File Upload Issues
+
+- Ensure the `uploads` directory exists and is writable
+- Check file size limits in your configuration
+
+## 📄 License
+
+[Add license information]
+
+## 👥 Contact
+
+[Add contact information]
